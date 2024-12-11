@@ -37,3 +37,55 @@ error_path=""
 
 # getopts - анализ опций и аргументов переданных команд.
 # $OPTIND - индекс опции; $OPTARG - доп. аргумент опции.
+while getopts ":uphl:e:-:" opt; do
+    case $opt in
+        u)
+            action="users"
+            ;;
+        p)
+            action="processes"
+            ;;
+        h)
+            show_help
+            exit 0
+            ;;
+        l)
+            log_path="$OPTARG"
+            ;;
+        e)
+            error_path="$OPTARG"
+            ;;
+        -)
+            case "${OPTARG}" in
+            users)
+                action="users"
+                ;;
+            processes)
+                action="processes"
+                ;;
+            help)
+                show_help
+                exit 0
+                ;;
+            log)
+                log_path="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                ;;
+            errors)
+                error_path="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                ;;
+             *)
+                echo "Invalid option: --${OPTARG}" >&2
+                exit 1
+                ;;
+            esac
+            ;;
+        \?)
+            echo "Invalid opion: -$OPTARG" >&2
+            exit 1
+            ;;
+        :)
+            echo "Option -$OPTARG requirs an argument." >&2
+            exit 1
+            ;;
+    esac
+done
