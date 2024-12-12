@@ -89,3 +89,41 @@ while getopts ":uphl:e:-:" opt; do
             ;;
     esac
 done
+# &> перенаправляет stdout, stderr в один файл
+# >&2 перенаправляет stdout в stderr
+# 2> перенаправляет stderr в указанный файл
+# dev/null - спец. файл "черная дыра"
+
+# Доступность путей
+if [[ -n $log_path ]]; then
+    if ! touch "$log_path" &> /dev/null; then
+        echo "Can not write to log file: $log_path" >&2
+        exit 1
+    fi
+    exec > "$log_path"
+fi
+
+if [[ -n $error_path ]]; then
+    if ! touch "$error_path" &> /dev/null; then
+        echo "Can not write to log file: $error_path" >&2
+        exit 1
+    fi
+    exec 2> "$error_path"
+fi
+
+case $action in
+    users)
+        list_users
+        ;;
+    processes)
+        list_processes
+        ;;
+    *)
+        #echo "Nothing to write in." >&2
+        show_help
+        exit 1
+        ;;
+esac
+
+# работа с -e. Эта команда вызывает ошибку, и она отправиться в error.log
+#ls noneexistent_file
