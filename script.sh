@@ -1,129 +1,167 @@
 #!/bin/bash
 
-function list_users {
-    echo "List of users"
-    awk -F':' '{ print $1, $6 }' /etc/passwd | sort
+print_help() {
+    echo "Using: \\\\$0 [options]"
+    echo ""
+    echo "Options"
+    echo "  -u, --users            Выводит перечень пользователей и их домашних директорий."
+    echo "  -p, --processes        Выводит перечень запущенных процессов."
+    echo "  -h, --help             Выводит данную справку."
+    echo "  -l PATH, --log PATH    Записывает вывод в файл по заданному пути."
+    echo "  -e PATH, --errors PATH Записывает ошибки в файл ошибок по заданному пути."
 }
 
-#   awk: утилита для обработки текстовых данных.
-#   -F':': установка символа : в качестве разделителя полей.
-#   '{ print $1, $6 }': команда awk, которая выводит первое ($1 - имя пользователя) и шестое ($6 - домашний каталог пользователя) поля для каждой строки.
+# Инициализация переменных для путей
+log_PATH=""
+error_PATH=""
+action=""
 
-function list_processes {
-    echo "List of processes"
-    ps -eo pid,comm --sort=pid
+# Функция для вывода пользователей и их домашних директорий
+list_users() {
+    awk -F: '$3>=1000 { print $1 " " $6 }' /etc/passwd | sort
 }
 
-#    ps: команда для отображения информации о текущих процессах.
-#   -e: параметр сообщает команде ps, что нужно отобразить все запущенные в системе процессы.
-#   -o: указание формата вывода (поля).
-#    pid: идентификатор процесса (Process ID).
-#    comm: имя команды или процесса.
-#    --sort=pid: сортировка вывода по идентификатору процесса (PID) в порядке возрастания.
+# Функция для вывода запущенных процессов
+list_processes() {
+    ps -Ao pid,comm --sort=pid
+}
+# Функция проверки доступности пути и создание файла, если необходимо
+ch_and_create_file() {
+    local path="$1"
+    if [[ ! -d "$(dirname "$path")" ]]; then
+        echo "Ошибка: Директория '$path' не существует." >&2
+        exit 1
+    fi
 
-# функция вывода справки о командах
-function show_help {
-    echo "Uasge: $0 [options]"
-    echo "Options:"
-    echo "  -u, --users            List users and their home directories"
-    echo "  -p, --processes        List running processes"
-    echo "  -h, --help             Show this help message"
-    echo "  -l PATH, --log PATH    Redirect output to a file at PATH"
-    echo "  -e PATH, --errors PATH Redirect error output to a file at PATH"
+    if [[ -f "$path" ]]; then
+        echo "Предупреждение: Файл '$path' существует. Будет перезаписан." >&2
+    fi
+    touch "$path" # создаем файл если он не существует.
+    # проверяем права на запись
+    if [[ ! -w "$path" ]]; then
+        echo "Ошибка: Нет прав на запись в '$path'" >&2
+        exit 1
+    fi
 }
 
-log_path=""
-error_path=""
+# Функция перенаправления стандартного вывода
+r_stdout() {
+    local log_PATH="$1"
+    ch_and_create_file "$log_PATH"
+    exec > "$log_PATH"
+}
 
-# getopts - анализ опций и аргументов переданных команд.
-# $OPTIND - индекс опции; $OPTARG - доп. аргумент опции.
+# Функция перенаправления стандартного потока ошибок
+r_stderr() {
+    local error_PATH="$1"
+    ch_and_create_file "$error_PATH"
+    exec 2>"$error_PATH"
+}
+# Обработка аргументов командной строки
 while getopts ":uphl:e:-:" opt; do
     case $opt in
         u)
             action="users"
+
             ;;
         p)
             action="processes"
+
             ;;
         h)
-            show_help
+            action="help"
+
             exit 0
             ;;
         l)
-            log_path="$OPTARG"
+            log_PATH="$OPTARG"
+            r_stdout "$log_PATH"
             ;;
         e)
-            error_path="$OPTARG"
+            error_PATH="$OPTARG"
+            r_stderr "$error_PATH"
             ;;
         -)
             case "${OPTARG}" in
-            users)
-                action="users"
-                ;;
-            processes)
-                action="processes"
-                ;;
-            help)
-                show_help
-                exit 0
-                ;;
-            log)
-                log_path="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-                ;;
-            errors)
-                error_path="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
-                ;;
-             *)
-                echo "Invalid option: --${OPTARG}" >&2
-                exit 1
-                ;;
+                users)
+                    action="users"
+
+                    ;;
+                processes)
+                    action="processes"
+
+                    ;;
+                help)
+                    action="help"
+                    exit 0
+                    ;;
+                log)
+                    log_PATH="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                    r_stdout "$log_PATH"
+                    ;;
+                errors)
+                    error_PATH="${!OPTIND}"; OPTIND=$(( OPTIND + 1 ))
+                    r_stderr "$error_PATH"
+                    ;;
+                *)
+                    echo "Invalid option: --${OPTARG}" >&2
+                    exit 1
+                    ;;
             esac
             ;;
         \?)
-            echo "Invalid opion: -$OPTARG" >&2
+            echo "Invalid option: -$OPTARG" >&2
             exit 1
             ;;
         :)
-            echo "Option -$OPTARG requirs an argument." >&2
+            echo "Option -$OPTARG requires an argument." >&2
             exit 1
             ;;
     esac
 done
-# &> перенаправляет stdout, stderr в один файл
-# >&2 перенаправляет stdout в stderr
-# 2> перенаправляет stderr в указанный файл
-# dev/null - спец. файл "черная дыра"
 
-# Доступность путей
-if [[ -n $log_path ]]; then
-    if ! touch "$log_path" &> /dev/null; then
-        echo "Can not write to log file: $log_path" >&2
+# Проверка и установка перенаправления потоков, если указаны пути
+if [ -n "$error_PATH" ]; then
+    if [[ "$error_PATH" == *.* ]]; then  # Проверка на расширение .*
+        touch "$error_PATH"  # Создаем файл, если он не существует
+        echo "Ошибка, действие не задано" > "$error_PATH"
+    else
+        echo "Error: Invalid file extension for error path $error_PATH" >&2
         exit 1
     fi
-    exec > "$log_path"
+else
+    # Если error_PATH не указан, создаем файл по умолчанию
+    default_error_file="error_log.txt"
+    touch "$default_error_file"  # Создаем файл, если он не существует
+    echo "Ошибка, действие не задано" > "$default_error_file"
 fi
 
-if [[ -n $error_path ]]; then
-    if ! touch "$error_path" &> /dev/null; then
-        echo "Can not write to log file: $error_path" >&2
+# Выполнение действия в зависимости от аргумента
+execute_action() {
+    case $action in
+        users) list_users ;;
+        processes) list_processes ;;
+        help) print_help ;;
+        *)
+            echo "No valid action specified." >&2
+            exit 1
+            ;;
+    esac
+}
+
+if [ -n "$log_PATH" ]; then
+    if [ -w "$log_PATH" ] || [ ! -e "$log_PATH" ]; then
+        execute_action > "$log_PATH"
+    else
+        echo "Error: Cannot write to log path $log_PATH" >&2
         exit 1
     fi
-    exec 2> "$error_path"
+else
+    # Если лог-файл не указан, выводим результат в терминал
+    execute_action
+    # Если лог-файл не указан, также записываем в файл по умолчанию
+    default_log_file="logi.log"
+    {
+        execute_action
+    } > "$default_log_file"
 fi
-
-case $action in
-    users)
-        list_users
-        ;;
-    processes)
-        list_processes
-        ;;
-    *)
-        #echo "Nothing to write in." >&2
-        show_help
-        exit 1
-        ;;
-esac
-
-# работа с -e. Эта команда вызывает ошибку, и она отправиться в error.log
-#ls noneexistent_file
